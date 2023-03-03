@@ -5,10 +5,10 @@ usage()
   exit 2
 }
 
-SOURCE_DIR="/workspace/search_with_machine_learning_course"
+SOURCE_DIR="./workspace/search_with_machine_learning_course"
 WEEK="week1"
-OUTPUT_DIR="/workspace/ltr_output"
-ALL_CLICKS_FILE="/workspace/datasets/train.csv"
+OUTPUT_DIR="./workspace/ltr_output"
+ALL_CLICKS_FILE="./workspace/datasets/train.csv"
 SPLIT_TRAIN_ROWS=1000000
 SPLIT_TEST_ROWS=1000000
 NUM_TEST_QUERIES=100 # the number of test queries to run
@@ -70,10 +70,14 @@ if [ $? -ne 0 ] ; then
   exit 2
 fi
 # Create the actual training set from the impressions set
+# python week1/utilities/build_ltr.py --ltr_terms_field sku --output_dir "./workspace/ltr_output" --create_xgb_training -f week1/conf/ltr_featureset.json --click_model heuristic
 python $WEEK/utilities/build_ltr.py --ltr_terms_field sku --output_dir "$OUTPUT_DIR" --create_xgb_training -f $WEEK/conf/ltr_featureset.json --click_model $CLICK_MODEL $DOWNSAMPLE
 if [ $? -ne 0 ] ; then
   exit 2
 fi
+
+
+
 # Given a training set in SVMRank format, train an XGB model
 python $WEEK/utilities/build_ltr.py  --output_dir "$OUTPUT_DIR" -x "$OUTPUT_DIR/training.xgb" --xgb_conf $WEEK/conf/xgb-conf.json
 if [ $? -ne 0 ] ; then
@@ -91,6 +95,7 @@ if [ $? -ne 0 ] ; then
 fi
 # Run our test queries through
 python $WEEK/utilities/build_ltr.py --xgb_test "$OUTPUT_DIR/test.csv" --train_file "$OUTPUT_DIR/train.csv" --output_dir "$OUTPUT_DIR" --xgb_test_num_queries $NUM_TEST_QUERIES  --xgb_main_query $MAIN_QUERY_WEIGHT --xgb_rescore_query_weight $RESCORE_WEIGHT
+# python $WEEK/utilities/build_ltr.py --xgb_test "./workspace/ltr_output/test.csv" --train_file "./workspace/ltr_output/train.csv" --output_dir "./workspace/ltr_output" --xgb_test_num_queries 100  --xgb_main_query 1 --xgb_rescore_query_weight 2
 if [ $? -ne 0 ] ; then
   exit 2
 fi

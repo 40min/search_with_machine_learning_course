@@ -232,7 +232,7 @@ if __name__ == "__main__":
         http_auth=auth,
         # client_cert = client_cert_path,
         # client_key = client_key_path,
-        use_ssl=True,
+        use_ssl=False,
         verify_certs=False,  # set to true if you have certs
         ssl_assert_hostname=False,
         ssl_show_warn=False,
