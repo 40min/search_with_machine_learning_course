@@ -100,4 +100,4 @@ if [ $? -ne 0 ] ; then
   exit 2
 fi
 # Analyze the results
-python $WEEK/utilities/build_ltr.py --analyze --output_dir "$OUTPUT_DIR" 
+python $WEEK/utilities/build_ltr.py --analyze --output_dir "$OUTPUT_DIR"
