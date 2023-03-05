@@ -164,6 +164,19 @@
             "sku": "{{keywords}}"
           }
         }
+      },
+      {
+        "name": "click_prior",
+        "params": [
+          "keywords_prior"
+        ],
+        "template_language": "mustache",
+        "template": {
+          "query_string": {
+            "query": "{{keywords_prior}}",
+            "fields": ["_id"]
+          }
+        }
       }
     ]
   }
