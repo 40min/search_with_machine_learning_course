@@ -1,6 +1,8 @@
 import argparse
 import multiprocessing
 import glob
+from collections import defaultdict
+
 from tqdm import tqdm
 import os
 import xml.etree.ElementTree as ET
@@ -32,7 +34,7 @@ if os.path.isdir(output_dir) == False:
 if args.input:
     directory = args.input
 # IMPLEMENT: Track the number of items in each category and only output if above the min
-min_products = args.min_products
+min_products = int(args.min_products)
 names_as_labels = False
 if args.label == 'name':
     names_as_labels = True
@@ -60,10 +62,27 @@ def _label_filename(filename):
 
 if __name__ == '__main__':
     files = glob.glob(f'{directory}/*.xml')
-    print("Writing results to %s" % output_file)
+    cat_products = defaultdict(lambda: set())
     with multiprocessing.Pool() as p:
-        all_labels = tqdm(p.imap(_label_filename, files), total=len(files))
-        with open(output_file, 'w') as output:
-            for label_list in all_labels:
-                for (cat, name) in label_list:
-                    output.write(f'__label__{cat} {name}\n')
+        print("Loading products")
+
+        total_label_list = []
+        read_bar = tqdm(total=len(files))
+        for label_list in p.imap(_label_filename, files):
+            for (cat, name) in label_list:
+                cat_products[cat].add(name)
+                total_label_list.append((cat, name))
+            read_bar.update()
+        read_bar.clear()
+        read_bar.close()
+
+    print("Writing results to %s" % output_file)
+    write_bar = tqdm(total=len(total_label_list))
+    with open(output_file, 'w') as output:
+        for (cat, name) in total_label_list:
+            if cat in cat_products and (len(cat_products[cat]) > min_products):
+                output.write(f'__label__{cat} {name}\n')
+            write_bar.update()
+
+    write_bar.clear()
+    write_bar.close()
