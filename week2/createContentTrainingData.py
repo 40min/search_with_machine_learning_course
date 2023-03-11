@@ -1,6 +1,9 @@
 import argparse
 import multiprocessing
 import glob
+from collections import defaultdict
+from time import sleep
+
 from tqdm import tqdm
 import os
 import xml.etree.ElementTree as ET
@@ -11,12 +14,12 @@ def transform_name(product_name):
     return product_name
 
 # Directory for product data
-directory = r'/workspace/datasets/product_data/products/'
+directory = r'./workspace/datasets/product_data/products/'
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 general = parser.add_argument_group("general")
 general.add_argument("--input", default=directory,  help="The directory containing product data")
-general.add_argument("--output", default="/workspace/datasets/fasttext/output.fasttext", help="the file to output to")
+general.add_argument("--output", default="./workspace/datasets/fasttext/output.fasttext", help="the file to output to")
 general.add_argument("--label", default="id", help="id is default and needed for downsteam use, but name is helpful for debugging")
 
 # IMPLEMENT: Setting min_products removes infrequent categories and makes the classifier's task easier.
@@ -32,7 +35,7 @@ if os.path.isdir(output_dir) == False:
 if args.input:
     directory = args.input
 # IMPLEMENT: Track the number of items in each category and only output if above the min
-min_products = args.min_products
+min_products = int(args.min_products)
 names_as_labels = False
 if args.label == 'name':
     names_as_labels = True
@@ -60,10 +63,34 @@ def _label_filename(filename):
 
 if __name__ == '__main__':
     files = glob.glob(f'{directory}/*.xml')
-    print("Writing results to %s" % output_file)
+    cat_products = defaultdict(lambda: set())
     with multiprocessing.Pool() as p:
-        all_labels = tqdm(p.imap(_label_filename, files), total=len(files))
-        with open(output_file, 'w') as output:
-            for label_list in all_labels:
-                for (cat, name) in label_list:
-                    output.write(f'__label__{cat} {name}\n')
+        print("Loading products")
+
+        total_label_list = []
+        read_bar = tqdm(total=len(files))
+        for label_list in p.imap(_label_filename, files):
+            for (cat, name) in label_list:
+                cat_products[cat].add(name)
+                total_label_list.append((cat, name))
+            read_bar.update()
+        read_bar.clear()
+        read_bar.close()
+
+    # shuf ./workspace/datasets/fasttext/pruned_labeled_products.txt --random-source=<(seq 99999) > ./workspace/datasets/fasttext/shuffled_pruned_labeled_products.txt
+    # cat ./workspace/datasets/fasttext/shuffled_pruned_labeled_products.txt | sed -e "s/\([.\!?,'/()]\)/ \1 /g" | tr "[:upper:]" "[:lower:]" | sed "s/[^[:alnum:]_]/ /g" | tr -s ' ' > ./workspace/datasets/fasttext/normalized_shuffled_pruned_labeled_products.txt
+    # cat ./workspace/datasets/fasttext/products.txt |  cut -c 10- | sed -e "s/\([.\!?,'/()]\)/ \1 /g" | tr "[:upper:]" "[:lower:]" | sed "s/[^[:alnum:]]/ /g" | tr -s ' ' > ./workspace/datasets/fasttext/normalized_products.txt
+    # ./fasttext skipgram -input ./normalized_products.txt -output ./title_model
+
+    # python week2/createContentTrainingData.py --output ./workspace/datasets/fasttext/products.txt --label name
+
+    print("Writing results to %s" % output_file)
+    write_bar = tqdm(total=len(total_label_list))
+    with open(output_file, 'w') as output:
+        for (cat, name) in total_label_list:
+            if cat in cat_products and (len(cat_products[cat]) > min_products):
+                output.write(f'__label__{cat} {name}\n')
+            write_bar.update()
+
+    write_bar.clear()
+    write_bar.close()

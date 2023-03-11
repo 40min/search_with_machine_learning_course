@@ -7,13 +7,13 @@ usage()
   exit 2
 }
 
-ANNOTATIONS_JSON_FILE="/workspace/search_with_machine_learning_course/conf/bbuy_annotations.json"
-PRODUCTS_JSON_FILE="/workspace/search_with_machine_learning_course/conf/bbuy_products.json"
-QUERIES_JSON_FILE="/workspace/search_with_machine_learning_course/conf/bbuy_queries.json"
-DATASETS_DIR="/workspace/datasets"
-PYTHON_LOC="/workspace/search_with_machine_learning_course/utilities"
+ANNOTATIONS_JSON_FILE="../conf/bbuy_annotations.json"
+PRODUCTS_JSON_FILE="../week2/conf/bbuy_products.json"
+QUERIES_JSON_FILE="../conf/bbuy_queries.json"
+DATASETS_DIR="../workspace/datasets"
+PYTHON_LOC="./utilities"
 
-LOGS_DIR="/workspace/logs"
+LOGS_DIR="../workspace/logs"
 ANNOTATE=""
 while getopts ':p:a:q:g:y:d:hrn' c
 do
@@ -45,7 +45,7 @@ if [ "$ANNOTATE" != "--annotate" ]; then
   echo "Creating index settings and mappings"
   if [ -f $PRODUCTS_JSON_FILE ]; then
     echo " Product file: $PRODUCTS_JSON_FILE"
-    curl -k -X PUT -u admin  "https://localhost:9200/bbuy_products" -H 'Content-Type: application/json' -d "@$PRODUCTS_JSON_FILE"
+    curl -k -X PUT -u admin  "http://localhost:9200/bbuy_products" -H 'Content-Type: application/json' -d "@$PRODUCTS_JSON_FILE"
     if [ $? -ne 0 ] ; then
       echo "Failed to create index with settings of $PRODUCTS_JSON_FILE"
       exit 2
@@ -61,30 +61,30 @@ if [ "$ANNOTATE" != "--annotate" ]; then
     fi
   fi
 
-  if [ -f $QUERIES_JSON_FILE ]; then
-    echo ""
-    echo " Query file: $QUERIES_JSON_FILE"
-    curl -k -X PUT -u admin  "https://localhost:9200/bbuy_queries" -H 'Content-Type: application/json' -d "@$QUERIES_JSON_FILE"
-    if [ $? -ne 0 ] ; then
-      echo "Failed to create index with settings of $QUERIES_JSON_FILE"
-      exit 2
-    fi
-    if [ -f index_queries.py ]; then
-      echo "Indexing queries data and writing logs to $LOGS_DIR/index_queries.log"
-      nohup python index_queries.py -s "$DATASETS_DIR/train.csv" > "$LOGS_DIR/index_queries.log" &
-      if [ $? -ne 0 ] ; then
-        echo "Failed to index queries"
-        exit 2
-      fi
-    fi
-  fi
+#  if [ -f $QUERIES_JSON_FILE ]; then
+#    echo ""
+#    echo " Query file: $QUERIES_JSON_FILE"
+#    curl -k -X PUT -u admin  "http://localhost:9200/bbuy_queries" -H 'Content-Type: application/json' -d "@$QUERIES_JSON_FILE"
+#    if [ $? -ne 0 ] ; then
+#      echo "Failed to create index with settings of $QUERIES_JSON_FILE"
+#      exit 2
+#    fi
+#    if [ -f index_queries.py ]; then
+#      echo "Indexing queries data and writing logs to $LOGS_DIR/index_queries.log"
+#      nohup python index_queries.py -s "$DATASETS_DIR/train.csv" > "$LOGS_DIR/index_queries.log" &
+#      if [ $? -ne 0 ] ; then
+#        echo "Failed to index queries"
+#        exit 2
+#      fi
+#    fi
+#  fi
 fi
 
 if [ "$ANNOTATE" == "--annotate" ]; then
   echo "Creating Annotations index"
   if [ -f $ANNOTATIONS_JSON_FILE ]; then
     echo " Product Annotations file: $ANNOTATIONS_JSON_FILE"
-    curl -k -X PUT -u admin  "https://localhost:9200/bbuy_annotations" -H 'Content-Type: application/json' -d "@$ANNOTATIONS_JSON_FILE"
+    curl -k -X PUT -u admin  "http://localhost:9200/bbuy_annotations" -H 'Content-Type: application/json' -d "@$ANNOTATIONS_JSON_FILE"
     if [ $? -ne 0 ] ; then
       echo "Failed to create index with settings of $ANNOTATIONS_JSON_FILE"
       exit 2
