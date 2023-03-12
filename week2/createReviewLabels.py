@@ -31,11 +31,12 @@ with open(output_file, 'w') as output:
         if filename.endswith('.xml'):
             with open(os.path.join(directory, filename)) as xml_file:
                 for line in xml_file:
-                    if '<rating>'in line:
+                    if '<rating>' in line:
                         rating = line[12:15]
                     elif '<title>' in line:
                         title = line[11:len(line) - 9]
                     elif '<comment>' in line:
                         comment = line[13:len(line) - 11]
                     elif '</review>'in line:
-                      output.write("__label__%s %s\n" % (rating, transform_training_data(title, comment)))
+                      if transformed_data := transform_training_data(title, comment):
+                          output.write("__label__%s %s\n" % (rating, transformed_data))
