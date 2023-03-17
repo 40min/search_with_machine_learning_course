@@ -206,7 +206,7 @@ class DataPrepper:
             if isinstance(doc_ids, np.ndarray):
                 doc_ids = doc_ids.tolist()
             click_prior_query = qu.create_prior_queries_from_group(group)
-            ltr_feats_df = self.__log_ltr_query_features(group[:1]["query_id"], key, doc_ids, click_prior_query, no_results,
+            ltr_feats_df = self.__log_ltr_query_features(group.iloc[0]["query_id"], key, doc_ids, click_prior_query, no_results,
                                                          terms_field=terms_field)
             if ltr_feats_df is not None:
                 feature_frames.append(ltr_feats_df)
@@ -231,25 +231,69 @@ class DataPrepper:
     # For each query, make a request to OpenSearch with SLTR logging on and extract the features
     def __log_ltr_query_features(self, query_id, key, query_doc_ids, click_prior_query, no_results, terms_field="_id"):
 
-        log_query = lu.create_feature_log_query(key, query_doc_ids, click_prior_query, self.featureset_name,
-                                                self.ltr_store_name,
-                                                size=len(query_doc_ids), terms_field=terms_field)
+        log_query = lu.create_feature_log_query(
+            key,
+            query_doc_ids, click_prior_query,
+            self.featureset_name,
+            self.ltr_store_name,
+            size=len(query_doc_ids),
+            terms_field=terms_field,
+        )
+
         ##### Step Extract LTR Logged Features:
         # IMPLEMENT_START --
-        print("IMPLEMENT ME: __log_ltr_query_features: Extract log features out of the LTR:EXT response and place in a data frame")
-        # Loop over the hits structure returned by running `log_query` and then extract out the features from the response per query_id and doc id.  Also capture and return all query/doc pairs that didn't return features
+
+        # Loop over the hits structure returned by running `log_query`
+        # and then extract out the features from the response per query_id and doc id.
+        # Also capture and return all query/doc pairs that didn't return features
         # Your structure should look like the data frame below
         feature_results = {}
-        feature_results["doc_id"] = []  # capture the doc id so we can join later
-        feature_results["query_id"] = []  # ^^^
+        feature_results["doc_id"] = []
+        feature_results["query_id"] = []
         feature_results["sku"] = []
-        feature_results["name_match"] = []
-        rng = np.random.default_rng(12345)
+
+        try:
+            response = self.opensearch.search(body=log_query, index=self.index_name)
+        except Exception as re:
+            print(re, log_query)
+            return
+
+        found_doc_id_to_features = {}
+        feature_names = set()
+        if response and response['hits']['hits'] and len(response['hits']['hits']) > 0:
+            hits = response['hits']['hits']
+            for hit in hits:
+                _id = int(hit["_id"])
+                found_doc_id_to_features[_id] = {}
+                assert len(hit["fields"]['_ltrlog']) == 1
+                for field in hit["fields"]['_ltrlog'][0]["log_entry"]:
+                    feature_names.add(field["name"])
+                    found_doc_id_to_features[_id][field["name"]] = float(field.get("value", 0))
+
+        for feature in feature_names:
+            feature_results[feature] = []
+
         for doc_id in query_doc_ids:
-            feature_results["doc_id"].append(doc_id)  # capture the doc id so we can join later
-            feature_results["query_id"].append(query_id)
-            feature_results["sku"].append(doc_id)  
-            feature_results["name_match"].append(rng.random())
+            if doc_id in found_doc_id_to_features:
+                feature_results["doc_id"].append(doc_id)
+                feature_results["query_id"].append(query_id)
+                feature_results["sku"].append(doc_id)
+                for feature in feature_names:
+                    feature_results[feature].append(found_doc_id_to_features[doc_id].get(feature, 0))
+            else:
+                if not no_results.get(key):
+                    no_results[key] = []
+                no_results[key].append(doc_id)
+
+                # for feature in feature_names:
+                #     feature_results["doc_id"].append(doc_id)
+                #     feature_results["query_id"].append(query_id)
+                #     feature_results["sku"].append(doc_id)
+                #     feature_results[feature].append(0)
+
+        if not found_doc_id_to_features:
+            return None
+
         frame = pd.DataFrame(feature_results)
         return frame.astype({'doc_id': 'int64', 'query_id': 'int64', 'sku': 'int64'})
         # IMPLEMENT_END
