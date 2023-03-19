@@ -221,7 +221,7 @@ Weird, seems normalisation with lowercase is good enough in compare to other tri
 !!! but improved with model query_category_model1000.bin
 * classified as: pcmcat247400050001 (MacBooks) and pcmcat209000050007 (iPad) -- it was below threshold of 0.5
 * results: top10 
-######### w/o filtering
+###### w/o filtering
 [
 	[
 		"Apple® - Apple TV®"
@@ -255,7 +255,7 @@ Weird, seems normalisation with lowercase is good enough in compare to other tri
 	]
 ]
 
-######### w filtering
+###### w filtering
 
 [
 	[
