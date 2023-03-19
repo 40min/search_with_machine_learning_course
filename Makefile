@@ -136,3 +136,36 @@ predict_reviews:
 
 .PHONY: run_reviews
 run_reviews: generate_reviews_data shuffle_reviews_data normalize_reviews_data split_reviews_data train_reviews test_reviews_model
+
+
+.PHONY: week3_count_uniq_cats
+week3_count_uniq_cats:
+	cut -d' ' -f1 ${DATA_DIR}/labeled_queries.txt | sort | uniq | wc -l
+
+
+.PHONY: week3_create_labeled_queries
+week3_create_labeled_queries:
+	python ./week3/create_labeled_queries.py --min_queries 10000
+
+.PHONY: week3_shuffle_labeled_queries
+week3_shuffle_labeled_queries:
+	bash -c "shuf ${DATA_DIR}/labeled_queries.txt  --random-source=<(seq 999999) > ${DATA_DIR}/shuffled_labeled_queries.fasttext"
+
+.PHONY: week3_split_labeled_queries
+week3_split_labeled_queries:
+	head -50000 ${DATA_DIR}/shuffled_labeled_queries.fasttext > ${DATA_DIR}/labeled_queries_training_data.fasttext && \
+	tail -10000 ${DATA_DIR}/shuffled_labeled_queries.fasttext > ${DATA_DIR}/labeled_queries_test_data.fasttext
+	wc -l ${DATA_DIR}/labeled_queries_training_data.fasttext
+	wc -l ${DATA_DIR}/labeled_queries_test_data.fasttext
+
+.PHONY: week3_train
+week3_train:
+	fasttext supervised -input ${DATA_DIR}/labeled_queries_training_data.fasttext -output ${DATA_DIR}/query_category_model -lr 0.5  -epoch 25 -wordNgrams 2
+
+.PHONY: week3_test_model
+week3_test_model:
+	fasttext test ${DATA_DIR}/query_category_model.bin ${DATA_DIR}/labeled_queries_test_data.fasttext
+
+
+.PHONY: run_week3
+run_week3: week3_create_labeled_queries week3_shuffle_labeled_queries week3_split_labeled_queries week3_train test_reviews_model
