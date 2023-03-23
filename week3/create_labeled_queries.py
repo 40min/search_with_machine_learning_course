@@ -1,5 +1,6 @@
 import os
 import argparse
+import re
 import xml.etree.ElementTree as ET
 import pandas as pd
 import numpy as np
@@ -22,8 +23,7 @@ general.add_argument("--output", default=output_file_name, help="the file to out
 args = parser.parse_args()
 output_file_name = args.output
 
-if args.min_queries:
-    min_queries = int(args.min_queries)
+min_queries = int(args.min_queries) if args.min_queries else 1
 
 # The root category, named Best Buy with id cat00000, doesn't have a parent.
 root_category_id = 'cat00000'
@@ -49,8 +49,43 @@ queries_df = pd.read_csv(queries_file_name)[['category', 'query']]
 queries_df = queries_df[queries_df['category'].isin(categories)]
 
 # IMPLEMENT ME: Convert queries to lowercase, and optionally implement other normalization, like stemming.
+all_except_alphanum = re.compile(r"[^\d\w]+")
+
+
+def query_comb(query: str) -> str:
+    q_lower = query.lower()
+    q_cleaned = re.sub(all_except_alphanum, " ", q_lower)
+    q_stemmed_list = [stemmer.stem(w) for w in q_cleaned.split()]
+    if not q_stemmed_list:
+        return ""
+    q_trimmed = " ".join(q_stemmed_list)
+    return q_trimmed
+
+
+queries_df['query'] = queries_df['query'].map(query_comb)
+queries_df = queries_df.drop(queries_df[queries_df['query'] == ""].index)
 
 # IMPLEMENT ME: Roll up categories to ancestors to satisfy the minimum number of queries per category.
+category_counts = queries_df.groupby(['category'])['query'].size().reset_index(name="counts")
+threshold = 1
+num_of_iterations = 0
+while threshold <= min_queries:
+    while category_counts.counts.lt(threshold).any():
+        num_of_iterations += 1
+        queries_df = pd.merge(queries_df, category_counts, on="category", how="left")
+        queries_df = pd.merge(queries_df, parents_df, on="category", how="left")
+        condition = queries_df["counts"] < threshold
+        queries_df.loc[condition, "category"] = queries_df.loc[condition, "parent"]
+        category_counts = queries_df.groupby(['category'])['query'].size().reset_index(name="counts")
+        queries_df = queries_df.drop(columns=["counts", "parent"], axis=1)
+
+    threshold += 1
+
+queries_df.fillna({"category": root_category_id}, inplace=True)
+print(f"Number of iterations: {num_of_iterations}")
+
+a = queries_df[queries_df['query'] == ""]
+b = queries_df[queries_df['category'] == ""]
 
 # Create labels in fastText format.
 queries_df['label'] = '__label__' + queries_df['category']

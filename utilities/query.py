@@ -1,5 +1,8 @@
 # A simple client for querying driven by user input on the command line.  Has hooks for the various
 # weeks (e.g. query understanding).  See the main section at the bottom of the file
+from typing import Optional
+
+import fasttext
 from opensearchpy import OpenSearch
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -48,7 +51,7 @@ def create_prior_queries(doc_ids, doc_id_weights,
 
 
 # Hardcoded query here.  Better to use search templates or other query config.
-def create_query(user_query, click_prior_query, filters, sort="_score", sortDir="desc", size=10, source=None, use_synonyms=False):
+def create_query(user_query, click_prior_query, filters, sort="_score", sortDir="desc", size=10, source=None, use_synonyms=False, category_matchers=None):
     name_field = "name.synonyms" if use_synonyms else "name"
     query_obj = {
         'size': size,
@@ -167,6 +170,10 @@ def create_query(user_query, click_prior_query, filters, sort="_score", sortDir=
             }
         }
     }
+
+    if category_matchers:
+        query_obj["query"]["function_score"]["query"]["bool"]["should"].extend(category_matchers)
+
     if click_prior_query is not None and click_prior_query != "":
         query_obj["query"]["function_score"]["query"]["bool"]["should"].append({
             "query_string": {
@@ -186,11 +193,86 @@ def create_query(user_query, click_prior_query, filters, sort="_score", sortDir=
     return query_obj
 
 
-def search(client, user_query, index="bbuy_products", sort="_score", sortDir="desc", use_synonyms=False):
+_model = None
+QUERY_CLASSIFY_THRESHOLD = 0.5
+CATEGORY_BOOST = 100
+CATEGORIES_BELOW_THRESHOLD_BOOST = 50
+
+
+def get_model():
+    global _model
+    _DATA_DIR = "./workspace/datasets/fasttext"
+    _MODEL_NAME = "query_category_model100.bin"
+
+    if not _model:
+        model_fp = os.path.join(_DATA_DIR, _MODEL_NAME)
+        _model = fasttext.load_model(model_fp)
+    return _model
+
+
+def classify_query(user_query: str) -> tuple[Optional[str], Optional[list[str]]]:
+
+    below_threshold_categories = []
+    summary_scores_of_below_threshold = 0
+
+    model = get_model()
+    categories, scores = model.predict(user_query, threshold=0, k=10)
+
+    for labeled_category, score in zip(categories, scores):
+        score = float(score)
+        category = labeled_category.replace("__label__", "")
+        if score > QUERY_CLASSIFY_THRESHOLD:
+            return category, None
+
+        summary_scores_of_below_threshold += score
+        below_threshold_categories.append(category)
+        if summary_scores_of_below_threshold > QUERY_CLASSIFY_THRESHOLD:
+            return None, below_threshold_categories
+
+    return None, None
+
+
+def search(
+        client,
+        user_query,
+        index="bbuy_products",
+        sort="_score",
+        sortDir="desc",
+        use_synonyms=False,
+        filter_on_categories=False,
+        boost_categories=False
+):
     #### W3: classify the query
-    #### W3: create filters and boosts
-    # Note: you may also want to modify the `create_query` method above
-    query_obj = create_query(user_query, click_prior_query=None, filters=None, sort=sort, sortDir=sortDir, source=["name", "shortDescription"], use_synonyms=use_synonyms)
+    filters = []
+    category_matchers = []
+    top_category = None
+    below_threshold_cat = []
+
+    if filter_on_categories or boost_categories:
+        top_category, below_threshold_cat = classify_query(user_query)
+
+    if filter_on_categories:
+        #### W3: create filters and boosts
+        if top_category:
+            filters.append({"term": {"categoryPathIds": top_category}})
+        elif below_threshold_cat:
+            filters.append({"terms": {"categoryPathIds": below_threshold_cat}})
+    elif boost_categories:
+        if top_category:
+            category_matchers.append({"term": {"categoryPathIds": {"value": top_category, "boost": CATEGORY_BOOST}}})
+        elif below_threshold_cat:
+            category_matchers.append({"terms": {"categoryPathIds": below_threshold_cat, "boost": CATEGORIES_BELOW_THRESHOLD_BOOST}})
+
+    query_obj = create_query(
+        user_query,
+        click_prior_query=None,
+        filters=filters,
+        sort=sort,
+        sortDir=sortDir,
+        source=["name", "shortDescription"],
+        use_synonyms=use_synonyms,
+        category_matchers=category_matchers
+    )
     logging.info(query_obj)
     response = client.search(query_obj, index=index)
     if response and response['hits']['hits'] and len(response['hits']['hits']) > 0:
@@ -213,6 +295,8 @@ if __name__ == "__main__":
     general.add_argument('--user',
                          help='The OpenSearch admin.  If this is set, the program will prompt for password too. If not set, use default of admin/admin')
     general.add_argument("-y", "--synonyms", action="store_true", help='Use synonyms')
+    general.add_argument("-f", "--catfilter", action="store_true", help='Use filtering on inferred categories')
+    general.add_argument("-b", "--catboost", action="store_true", help='Use boosting of inferred categories')
 
     args = parser.parse_args()
 
@@ -226,6 +310,8 @@ if __name__ == "__main__":
         password = getpass()
         auth = (args.user, password)
     use_synonyms = True if args.synonyms else False
+    filter_on_categories = True if args.catfilter else False
+    boost_categories = True if args.catboost else False
 
     base_url = "https://{}:{}/".format(host, port)
     opensearch = OpenSearch(
@@ -248,7 +334,14 @@ if __name__ == "__main__":
         query = input().rstrip()
         if query == "exit":
             break
-        search(client=opensearch, user_query=query, index=index_name, use_synonyms=use_synonyms)
+        search(
+            client=opensearch,
+            user_query=query,
+            index=index_name,
+            use_synonyms=use_synonyms,
+            filter_on_categories=filter_on_categories,
+            boost_categories=boost_categories,
+        )
 
         print(query_prompt)
     
