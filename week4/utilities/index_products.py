@@ -121,6 +121,7 @@ def index_file(file, index_name, reduced=False):
     children = root.findall("./product")
     docs = []
     names = []
+    descriptions = []
     # IMPLEMENT ME: maintain the names array parallel to docs,
     # and then embed them in bulk and add them to each doc,
     # in the '_source' part of each docs entry, before calling bulk
@@ -141,23 +142,31 @@ def index_file(file, index_name, reduced=False):
             continue
         docs.append({'_index': index_name, '_id': doc['sku'][0], '_source': doc})
         names.append(str(doc["name"][0]))
+
+        descr = doc.get("shortDescription")
+        descr_str = str(descr[0]) if descr else "-"
+        descriptions.append(descr_str)
+
         #docs.append({'_index': index_name, '_source': doc})
         docs_indexed += 1
         if docs_indexed % 200 == 0:
-            index_document(client, model, docs, names)
+            index_document(client, model, docs, names, descriptions)
             logger.info(f'{docs_indexed} documents indexed')
             docs = []
             names = []
+            descriptions = []
     if len(docs) > 0:
-        index_document(client, model, docs, names)
+        index_document(client, model, docs, names, descriptions)
         logger.info(f'{docs_indexed} documents indexed')
     return docs_indexed
 
 
-def index_document(client, model, docs, names):
+def index_document(client, model, docs, names, descriptions):
     name_embeddings = model.encode(names)
+    descriptions_embeddings = model.encode(descriptions)
     for i, d in enumerate(docs):
         d["_source"]["name_vector"] = list(name_embeddings[i])
+        d["_source"]["description_vector"] = list(descriptions_embeddings[i])
     logger.info("Indexing")
     bulk(client, docs, request_timeout=60)
 
