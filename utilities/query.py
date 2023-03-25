@@ -247,18 +247,35 @@ def get_sentence_model():
 def create_vector_query(user_query: str, num_results: int, source: list[str]) -> dict[str, Any]:
     embeddings = get_sentence_model().encode([user_query])
     query_embeddings = list(embeddings[0])
-    return {
+    query = {
         "_source": source,
         "size": num_results,
         "query": {
-            "knn": {
-                "name_vector": {
-                    "vector": query_embeddings,
-                    "k": num_results
-                }
+            "bool": {
+                "should": [
+                    {
+                        "knn": {
+                            "name_vector": {
+                                "vector": query_embeddings,
+                                "k": num_results
+                            }
+                        }
+                    },
+                    {
+                        "knn": {
+                            "description_vector": {
+                                "vector": query_embeddings,
+                                "k": num_results
+                            }
+                        }
+                    }
+                ]
             }
         }
     }
+
+    return query
+
 
 
 def search(
@@ -282,7 +299,7 @@ def search(
         query_obj = create_vector_query(
             user_query,
             num_results=10,
-            source=["name"],
+            source=["name", "shortDescription"],
         )
     else:
         if filter_on_categories or boost_categories:
