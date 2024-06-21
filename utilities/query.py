@@ -1,10 +1,13 @@
 # A simple client for querying driven by user input on the command line.  Has hooks for the various
 # weeks (e.g. query understanding).  See the main section at the bottom of the file
-from typing import Optional
+from typing import Optional, Any
 
 import fasttext
 from opensearchpy import OpenSearch
 import warnings
+
+from sentence_transformers import SentenceTransformer
+
 warnings.filterwarnings("ignore", category=FutureWarning)
 import argparse
 import json
@@ -232,6 +235,49 @@ def classify_query(user_query: str) -> tuple[Optional[str], Optional[list[str]]]
     return None, None
 
 
+_sentence_model = None
+
+def get_sentence_model():
+    global _sentence_model
+    if not _sentence_model:
+        _sentence_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+    return _sentence_model
+
+
+def create_vector_query(user_query: str, num_results: int, source: list[str]) -> dict[str, Any]:
+    embeddings = get_sentence_model().encode([user_query])
+    query_embeddings = list(embeddings[0])
+    query = {
+        "_source": source,
+        "size": num_results,
+        "query": {
+            "bool": {
+                "should": [
+                    {
+                        "knn": {
+                            "name_vector": {
+                                "vector": query_embeddings,
+                                "k": num_results
+                            }
+                        }
+                    },
+                    {
+                        "knn": {
+                            "description_vector": {
+                                "vector": query_embeddings,
+                                "k": num_results
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+    }
+
+    return query
+
+
+
 def search(
         client,
         user_query,
@@ -240,7 +286,8 @@ def search(
         sortDir="desc",
         use_synonyms=False,
         filter_on_categories=False,
-        boost_categories=False
+        boost_categories=False,
+        use_vectors=False,
 ):
     #### W3: classify the query
     filters = []
@@ -248,31 +295,40 @@ def search(
     top_category = None
     below_threshold_cat = []
 
-    if filter_on_categories or boost_categories:
-        top_category, below_threshold_cat = classify_query(user_query)
+    if use_vectors:
+        query_obj = create_vector_query(
+            user_query,
+            num_results=10,
+            source=["name", "shortDescription"],
+        )
+    else:
+        if filter_on_categories or boost_categories:
+            top_category, below_threshold_cat = classify_query(user_query)
 
-    if filter_on_categories:
-        #### W3: create filters and boosts
-        if top_category:
-            filters.append({"term": {"categoryPathIds": top_category}})
-        elif below_threshold_cat:
-            filters.append({"terms": {"categoryPathIds": below_threshold_cat}})
-    elif boost_categories:
-        if top_category:
-            category_matchers.append({"term": {"categoryPathIds": {"value": top_category, "boost": CATEGORY_BOOST}}})
-        elif below_threshold_cat:
-            category_matchers.append({"terms": {"categoryPathIds": below_threshold_cat, "boost": CATEGORIES_BELOW_THRESHOLD_BOOST}})
+        if filter_on_categories:
+            #### W3: create filters and boosts
+            if top_category:
+                filters.append({"term": {"categoryPathIds": top_category}})
+            elif below_threshold_cat:
+                filters.append({"terms": {"categoryPathIds": below_threshold_cat}})
+        elif boost_categories:
+            if top_category:
+                category_matchers.append({"term": {"categoryPathIds": {"value": top_category, "boost": CATEGORY_BOOST}}})
+            elif below_threshold_cat:
+                category_matchers.append({"terms": {"categoryPathIds": below_threshold_cat, "boost": CATEGORIES_BELOW_THRESHOLD_BOOST}})
 
-    query_obj = create_query(
-        user_query,
-        click_prior_query=None,
-        filters=filters,
-        sort=sort,
-        sortDir=sortDir,
-        source=["name", "shortDescription"],
-        use_synonyms=use_synonyms,
-        category_matchers=category_matchers
-    )
+        query_obj = create_query(
+            user_query,
+            click_prior_query=None,
+            filters=filters,
+            sort=sort,
+            sortDir=sortDir,
+            source=["name", "shortDescription"],
+            use_synonyms=use_synonyms,
+            category_matchers=category_matchers
+        )
+
+
     logging.info(query_obj)
     response = client.search(query_obj, index=index)
     if response and response['hits']['hits'] and len(response['hits']['hits']) > 0:
@@ -297,6 +353,7 @@ if __name__ == "__main__":
     general.add_argument("-y", "--synonyms", action="store_true", help='Use synonyms')
     general.add_argument("-f", "--catfilter", action="store_true", help='Use filtering on inferred categories')
     general.add_argument("-b", "--catboost", action="store_true", help='Use boosting of inferred categories')
+    general.add_argument("-v", "--vectors", action="store_true", help='Use vector search')
 
     args = parser.parse_args()
 
@@ -312,6 +369,7 @@ if __name__ == "__main__":
     use_synonyms = True if args.synonyms else False
     filter_on_categories = True if args.catfilter else False
     boost_categories = True if args.catboost else False
+    use_vectors = True if args.vectors else False
 
     base_url = "https://{}:{}/".format(host, port)
     opensearch = OpenSearch(
@@ -341,6 +399,7 @@ if __name__ == "__main__":
             use_synonyms=use_synonyms,
             filter_on_categories=filter_on_categories,
             boost_categories=boost_categories,
+            use_vectors=use_vectors,
         )
 
         print(query_prompt)
